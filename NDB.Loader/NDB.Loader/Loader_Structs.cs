@@ -16,7 +16,7 @@ namespace NDB.Loader
             public String LibraryVersion;
             public String LibraryType;
             public Assembly LibraryAssembly;
-            public IEnumerable<ModuleInfo> LibraryModules;
+            public IEnumerable<ModuleInfo>? LibraryModules;
         }
     }
 }

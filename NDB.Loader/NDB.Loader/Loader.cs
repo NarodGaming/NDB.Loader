@@ -1,6 +1,7 @@
 ﻿using Discord;
 using Discord.Commands;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.Metadata.Ecma335;
@@ -39,7 +40,18 @@ namespace NDB.Loader
             for (int i = 0; i < LibraryItems.Count; i++)
             {
                 var item = LibraryItems[i];
-                item.LibraryModules = await NDB_Main._commands.AddModulesAsync(item.LibraryAssembly, NDB_Main._services);
+                if(item.LibraryType == "Library")
+                {
+                    item.LibraryModules = await NDB_Main._commands.AddModulesAsync(item.LibraryAssembly, NDB_Main._services);
+                } else
+                {
+                    ServiceCollection newCollection = new();
+                    foreach (var module in item.LibraryAssembly.GetModules())
+                    {
+                        newCollection.AddSingleton(module);
+                    }
+                    NDB_Main.AddServices(newCollection);
+                }
             }
         } 
         
