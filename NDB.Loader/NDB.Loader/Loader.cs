@@ -46,9 +46,11 @@ namespace NDB.Loader
                 } else
                 {
                     ServiceCollection newCollection = new();
-                    foreach (var module in item.LibraryAssembly.GetModules())
+                    foreach (var type in item.LibraryAssembly.GetTypes())
                     {
-                        newCollection.AddSingleton(module);
+                        Console.WriteLine(type.FullName);
+                        var newService = Activator.CreateInstance(type);
+                        newCollection.AddSingleton(type);
                     }
                     NDB_Main.AddServices(newCollection);
                 }
