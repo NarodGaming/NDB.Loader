@@ -3,6 +3,7 @@ using Discord.Commands;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics;
+using System.Linq;
 using System.Reflection;
 using System.Reflection.Metadata.Ecma335;
 
@@ -18,7 +19,7 @@ namespace NDB.Loader
         }
 
         public Loader() {
-            if (LibraryItems.Count == 0)
+            if (LibraryItems.Count == 0 && File.Exists(Path.GetFileName("config.loader.json")))
             {
                 IConfiguration _loaderconfig = BuildConfig();
 
@@ -28,7 +29,7 @@ namespace NDB.Loader
                     newLibrary.LibraryName = item.Value;
                     newLibrary.LibraryAssembly = Assembly.LoadFrom(item.Value);
                     newLibrary.LibraryVersion = FileVersionInfo.GetVersionInfo(item.Value).ProductVersion;
-                    if (item.Key.Contains("lib")) { newLibrary.LibraryType = "Library"; } else if (item.Key.Contains("ser")) { newLibrary.LibraryType = "Service"; }
+                    if (item.Key.Contains("lib")) { newLibrary.LibraryType = "Library"; } else if (item.Key.Contains("ser")) { newLibrary.LibraryType = "Service"; } else { throw new ArgumentException($"Invalid key naming in loader.config.json: Expected lib* or ser*, got {item.Key}"); }
                     LibraryItems.Add(newLibrary);
                 }
                 loadModulesConstructor();
@@ -39,20 +40,18 @@ namespace NDB.Loader
         {
             for (int i = 0; i < LibraryItems.Count; i++)
             {
+                Console.WriteLine($"Loading: {LibraryItems[i].LibraryName} {Environment.NewLine}");
                 var item = LibraryItems[i];
                 if(item.LibraryType == "Library")
                 {
                     item.LibraryModules = await NDB_Main._commands.AddModulesAsync(item.LibraryAssembly, NDB_Main._services);
                 } else
                 {
-                    ServiceCollection newCollection = new();
                     foreach (var type in item.LibraryAssembly.GetTypes())
                     {
-                        Console.WriteLine(type.FullName);
-                        var newService = Activator.CreateInstance(type);
-                        newCollection.AddSingleton(type);
+                        NDB_Main._lateServices.Add(type);
                     }
-                    NDB_Main.AddServices(newCollection);
+                    NDB_Main.AddServices(); // immediately add this service, may be required for next library
                 }
             }
         } 
@@ -77,7 +76,7 @@ namespace NDB.Loader
         }
 
         [Command("unload", RunMode = RunMode.Async)]
-        [Summary("OWNER: Unloads a specified library.")]
+        [Summary("OWNER: Unloads a specified library/service.")]
         [Remarks("unload <library>")]
         public async Task unloadLib(String library)
         {
@@ -87,13 +86,18 @@ namespace NDB.Loader
                 {
                     foreach (Loader_Structs.LibraryItem libraryInList in LibraryItems)
                     {
-                        foreach (ModuleInfo libraryModule in libraryInList.LibraryModules)
+                        if (libraryInList.LibraryType == "Library")
                         {
-                            await NDB_Main._commands.RemoveModuleAsync(libraryModule);
+                            foreach (ModuleInfo libraryModule in libraryInList.LibraryModules)
+                            {
+                                await NDB_Main._commands.RemoveModuleAsync(libraryModule);
+                            }
                         }
                     }
+                    NDB_Main._lateServices.Clear();
+                    NDB_Main.AddServices(); // this will unload ANY and ALL services which were 'late loaded'
                     LibraryItems.Clear();
-                    await ReplyAsync("All libraries have been successfully detached.");
+                    await ReplyAsync("All libraries & services have been successfully detached.");
                 } else
                 {
                     int removeIndex = -1;
@@ -101,12 +105,25 @@ namespace NDB.Loader
                     {
                         if (library == libraryInList.LibraryName)
                         {
-                            foreach (ModuleInfo libraryModule in libraryInList.LibraryModules)
-                            {
-                                await NDB_Main._commands.RemoveModuleAsync(libraryModule);
-                            }
                             removeIndex = LibraryItems.IndexOf(libraryInList);
-                            break;
+                            if (libraryInList.LibraryType == "Library")
+                            {
+                                foreach (ModuleInfo libraryModule in libraryInList.LibraryModules)
+                                {
+                                    await NDB_Main._commands.RemoveModuleAsync(libraryModule);
+                                }
+                                break;
+                            } else
+                            {
+                                foreach (var item in NDB_Main._lateServices)
+                                {
+                                    if(libraryInList.LibraryAssembly.GetTypes().Contains(item.GetType()))
+                                    {
+                                        NDB_Main._lateServices.Remove(item);
+                                    }
+                                }
+                                break;
+                            }
                         }
                     }
                     if (removeIndex != -1)
@@ -125,10 +142,27 @@ namespace NDB.Loader
         }
 
         [Command("load", RunMode = RunMode.Async)]
-        [Summary("OWNER: Loads a specified library.")]
-        [Remarks("load <library>")]
-        public async Task loadLib(String library)
+        [Summary("OWNER: Loads a specified library/service.")]
+        [Remarks("load <library> <type>")]
+        public async Task loadLib(String library, String libType = "")
         {
+            if (libType == "")
+            {
+                String templib = library.ToLower();
+                bool containsLib = templib.Contains("lib");
+                bool containsSer = templib.Contains("ser");
+
+                if (containsLib && !containsSer) {
+                    libType = "Library";
+                } else if (!containsLib && containsSer) {
+                    libType = "Service";
+                } else
+                {
+                    await ReplyAsync("Invalid library type. Valid: Library, Service.");
+                    return;
+                }
+            }
+            libType= libType.ToLower();
             if (Context.User.Id.ToString() == NDB_Main._config["ownerid"])
             {
                 bool matchFound = false;
@@ -142,18 +176,36 @@ namespace NDB.Loader
                 if (matchFound)
                 {
                     await ReplyAsync("This library is already loaded! You must first unload this library before loading it again.");
+                    return;
                 } else if (!File.Exists(library))
                 {
                     await ReplyAsync("This library does not exist in the current directory. Please double check the spelling and try again.");
+                    return;
                 } else
                 {
                     Loader_Structs.LibraryItem newLibrary = new();
                     newLibrary.LibraryName = library;
                     newLibrary.LibraryAssembly = Assembly.LoadFrom(library);
-                    newLibrary.LibraryModules = await NDB_Main._commands.AddModulesAsync(newLibrary.LibraryAssembly, NDB_Main._services);
                     newLibrary.LibraryVersion = FileVersionInfo.GetVersionInfo(library).ProductVersion;
-                    newLibrary.LibraryType = "Library";
-                    LibraryItems.Add(newLibrary);
+                    if (libType == "library" || libType == "lib")
+                    {
+                        newLibrary.LibraryModules = await NDB_Main._commands.AddModulesAsync(newLibrary.LibraryAssembly, NDB_Main._services);
+                        newLibrary.LibraryType = "Library";
+                        LibraryItems.Add(newLibrary);
+                    } else if (libType == "service" || libType == "ser")
+                    {
+                        foreach (var type in newLibrary.LibraryAssembly.GetTypes())
+                        {
+                            NDB_Main._lateServices.Add(type);
+                        }
+                        NDB_Main.AddServices(); // immediately add this service, may be required for next library
+                        newLibrary.LibraryType = "Service";
+                        LibraryItems.Add(newLibrary);
+                    } else
+                    {
+                        await ReplyAsync("Invalid library type. Valid: Library, Service.");
+                        return;
+                    }
                     await ReplyAsync($"Successfully loaded {library}!");
                 }
             }
