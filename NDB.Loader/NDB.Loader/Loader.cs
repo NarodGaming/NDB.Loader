@@ -13,13 +13,15 @@ namespace NDB.Loader
     {
         private static List<Loader_Structs.LibraryItem> LibraryItems = new();
 
+        private static bool hasFirstRun = false;
+
         private IConfiguration BuildConfig()
         {
             return new ConfigurationBuilder().SetBasePath(Directory.GetCurrentDirectory()).AddJsonFile("config.loader.json").Build();
         }
 
         public Loader() {
-            if (LibraryItems.Count == 0 && File.Exists(Path.GetFileName("config.loader.json")))
+            if (hasFirstRun == false && File.Exists(Path.GetFileName("config.loader.json")))
             {
                 IConfiguration _loaderconfig = BuildConfig();
 
@@ -33,6 +35,7 @@ namespace NDB.Loader
                     LibraryItems.Add(newLibrary);
                 }
                 loadModulesConstructor();
+                hasFirstRun = true;
             }
         }
 
@@ -45,6 +48,7 @@ namespace NDB.Loader
                 if(item.LibraryType == "Library")
                 {
                     item.LibraryModules = await NDB_Main._commands.AddModulesAsync(item.LibraryAssembly, NDB_Main._services);
+                    LibraryItems[i] = item;
                 } else
                 {
                     foreach (var type in item.LibraryAssembly.GetTypes())
