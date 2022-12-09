@@ -72,6 +72,7 @@ namespace NDB.Loader
                 {
                     builderString += $"{library.LibraryName} ({library.LibraryType} | v{library.LibraryVersion}) {Environment.NewLine}";
                 }
+                if (builderString == "") { return ReplyAsync("You don't have any libraries currently loaded!"); }
                 return ReplyAsync($"Currently loaded libraries: {Environment.NewLine}{builderString}");
             } else
             {
