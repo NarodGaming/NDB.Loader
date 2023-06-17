@@ -42,7 +42,7 @@ namespace NDB.Loader
                         LibraryItems.Add(newLibrary);
                     }
                 }
-                loadModulesConstructor();
+                //loadModulesConstructor();
                 /*                Type[] sharedTypesWithDep = new Type[LibraryItems.Count+1];
                                 for (int i = 0; i < LibraryItems.Count; i++)
                                 {
