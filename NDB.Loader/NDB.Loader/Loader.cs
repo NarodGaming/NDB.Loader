@@ -6,6 +6,8 @@ using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Metadata.Ecma335;
+using McMaster.NETCore.Plugins;
+using System.Runtime.Loader;
 
 namespace NDB.Loader
 {
@@ -14,6 +16,9 @@ namespace NDB.Loader
         private static List<Loader_Structs.LibraryItem> LibraryItems = new();
 
         private static bool hasFirstRun = false;
+
+        private static string currentDir = AppContext.BaseDirectory;
+
 
         private IConfiguration BuildConfig()
         {
@@ -27,11 +32,36 @@ namespace NDB.Loader
 
                 foreach (var item in _loaderconfig.AsEnumerable())
                 {
+                    if (item.Key.Contains("dep") || item.Key.Contains("ser")) {
+                        Loader_Structs.LibraryItem newLibrary = new();
+                        newLibrary.LibraryName = item.Value;
+                        newLibrary.LibraryAssembly = PluginLoader.CreateFromAssemblyFile(assemblyFile: currentDir + item.Value, sharedTypes: new[] { typeof(NDB_Main) }, isUnloadable: true);
+                        newLibrary.LibraryVersion = FileVersionInfo.GetVersionInfo(item.Value).ProductVersion;
+                        newLibrary.timeLoaded = DateTime.Now;
+                        if (item.Key.Contains("lib")) { newLibrary.LibraryType = "Library"; } else if (item.Key.Contains("ser")) { newLibrary.LibraryType = "Service"; } else if (item.Key.Contains("dep")) { newLibrary.LibraryType = "Dependency"; } else { throw new ArgumentException($"Invalid key naming in loader.config.json: Expected lib*, ser* or dep*, got {item.Key}"); }
+                        LibraryItems.Add(newLibrary);
+                    }
+                }
+                loadModulesConstructor();
+                /*                Type[] sharedTypesWithDep = new Type[LibraryItems.Count+1];
+                                for (int i = 0; i < LibraryItems.Count; i++)
+                                {
+                                    sharedTypesWithDep[i] = LibraryItems[i].LibraryAssemblyDirect.ExportedTypes.First();
+                                    Console.WriteLine(LibraryItems[i].LibraryAssemblyDirect.ExportedTypes.First().AssemblyQualifiedName);
+                                    Console.WriteLine(typeof(NDB_Main).AssemblyQualifiedName);
+                                }
+                                sharedTypesWithDep[LibraryItems.Count] = typeof(NDB_Main);*/
+
+                Type[] sharedTypesWithDep = new Type[] { typeof(NDB_Main) };
+                foreach (var item in _loaderconfig.AsEnumerable())
+                {
+                    if (item.Key.Contains("dep") || item.Key.Contains("ser")) { continue; }
                     Loader_Structs.LibraryItem newLibrary = new();
                     newLibrary.LibraryName = item.Value;
-                    newLibrary.LibraryAssembly = Assembly.LoadFrom(item.Value);
+                    newLibrary.LibraryAssembly = PluginLoader.CreateFromAssemblyFile(assemblyFile: currentDir + item.Value, sharedTypes: sharedTypesWithDep, isUnloadable: true);
                     newLibrary.LibraryVersion = FileVersionInfo.GetVersionInfo(item.Value).ProductVersion;
-                    if (item.Key.Contains("lib")) { newLibrary.LibraryType = "Library"; } else if (item.Key.Contains("ser")) { newLibrary.LibraryType = "Service"; } else { throw new ArgumentException($"Invalid key naming in loader.config.json: Expected lib* or ser*, got {item.Key}"); }
+                    newLibrary.timeLoaded = DateTime.Now;
+                    if (item.Key.Contains("lib")) { newLibrary.LibraryType = "Library"; } else if (item.Key.Contains("ser")) { newLibrary.LibraryType = "Service"; } else if (item.Key.Contains("dep")) { newLibrary.LibraryType = "Dependency"; } else { throw new ArgumentException($"Invalid key naming in loader.config.json: Expected lib*, ser* or dep*, got {item.Key}"); }
                     LibraryItems.Add(newLibrary);
                 }
                 loadModulesConstructor();
@@ -45,18 +75,28 @@ namespace NDB.Loader
             {
                 Console.WriteLine($"Loading: {LibraryItems[i].LibraryName} {Environment.NewLine}");
                 var item = LibraryItems[i];
-                if(item.LibraryType == "Library")
+                using (item.LibraryAssembly.EnterContextualReflection())
                 {
-                    item.LibraryModules = await NDB_Main._commands.AddModulesAsync(item.LibraryAssembly, NDB_Main._services);
-                    LibraryItems[i] = item;
-                } else
+                    if (item.LibraryType == "Dependency" || item.LibraryType == "Service")
+                    {
+                        item.LibraryAssemblyDirect = AssemblyLoadContext.Default.LoadFromAssemblyPath(currentDir + item.LibraryName);
+                    } else
+                    {
+                        item.LibraryAssemblyDirect = Assembly.LoadFile(currentDir + item.LibraryName);
+                    }
+                }
+                if (item.LibraryType == "Library")
                 {
-                    foreach (var type in item.LibraryAssembly.GetTypes())
+                    item.LibraryModules = await NDB_Main._commands.AddModulesAsync(item.LibraryAssemblyDirect, NDB_Main._services);
+                } else if (item.LibraryType == "Service")
+                {
+                    foreach (var type in item.LibraryAssemblyDirect.GetExportedTypes())
                     {
                         NDB_Main._lateServices.Add(type);
                     }
                     NDB_Main.AddServices(); // immediately add this service, may be required for next library
                 }
+                LibraryItems[i] = item;
             }
         } 
         
@@ -70,10 +110,10 @@ namespace NDB.Loader
                 String builderString = "";
                 foreach (Loader_Structs.LibraryItem library in LibraryItems)
                 {
-                    builderString += $"{library.LibraryName} ({library.LibraryType} | v{library.LibraryVersion}) {Environment.NewLine}";
+                    builderString += $"{library.LibraryName.Split(".dll")[0]} *({library.LibraryType} | v{library.LibraryVersion} | Loaded at {library.timeLoaded})* {Environment.NewLine}";
                 }
                 if (builderString == "") { return ReplyAsync("You don't have any libraries currently loaded!"); }
-                return ReplyAsync($"Currently loaded libraries: {Environment.NewLine}{builderString}");
+                return ReplyAsync($"**Currently loaded libraries:** {Environment.NewLine}{builderString}");
             } else
             {
                 return ReplyAsync($"Sorry, you aren't an owner.");
@@ -89,6 +129,7 @@ namespace NDB.Loader
             {
                 if (library == "all")
                 {
+                    List<Loader_Structs.LibraryItem> dependencyList = new();
                     foreach (Loader_Structs.LibraryItem libraryInList in LibraryItems)
                     {
                         if (libraryInList.LibraryType == "Library")
@@ -98,10 +139,21 @@ namespace NDB.Loader
                                 await NDB_Main._commands.RemoveModuleAsync(libraryModule);
                             }
                         }
+                        if (libraryInList.LibraryType == "Dependency")
+                        {
+                            dependencyList.Add(libraryInList);
+                        } else
+                        {
+                            libraryInList.LibraryAssembly.Dispose();
+                        }
                     }
                     NDB_Main._lateServices.Clear();
                     NDB_Main.AddServices(); // this will unload ANY and ALL services which were 'late loaded'
                     LibraryItems.Clear();
+                    foreach (Loader_Structs.LibraryItem dependencyInList in dependencyList)
+                    {
+                        LibraryItems.Add(dependencyInList);
+                    }
                     await ReplyAsync("All libraries & services have been successfully detached.");
                 } else
                 {
@@ -122,7 +174,7 @@ namespace NDB.Loader
                             {
                                 foreach (var item in NDB_Main._lateServices)
                                 {
-                                    if(libraryInList.LibraryAssembly.GetTypes().Contains(item.GetType()))
+                                    if(libraryInList.LibraryAssemblyDirect.GetTypes().Contains(item.GetType()))
                                     {
                                         NDB_Main._lateServices.Remove(item);
                                     }
@@ -190,16 +242,21 @@ namespace NDB.Loader
                 {
                     Loader_Structs.LibraryItem newLibrary = new();
                     newLibrary.LibraryName = library;
-                    newLibrary.LibraryAssembly = Assembly.LoadFrom(library);
+                    newLibrary.LibraryAssembly = PluginLoader.CreateFromAssemblyFile(assemblyFile: currentDir + newLibrary.LibraryName, sharedTypes: new[] { typeof(NDB_Main) }, isUnloadable: true);
                     newLibrary.LibraryVersion = FileVersionInfo.GetVersionInfo(library).ProductVersion;
+                    newLibrary.timeLoaded = DateTime.Now;
+                    using (newLibrary.LibraryAssembly.EnterContextualReflection())
+                    {
+                        newLibrary.LibraryAssemblyDirect = Assembly.LoadFile(currentDir + newLibrary.LibraryName);
+                    }
                     if (libType == "library" || libType == "lib")
                     {
-                        newLibrary.LibraryModules = await NDB_Main._commands.AddModulesAsync(newLibrary.LibraryAssembly, NDB_Main._services);
+                        newLibrary.LibraryModules = await NDB_Main._commands.AddModulesAsync(newLibrary.LibraryAssemblyDirect, NDB_Main._services);
                         newLibrary.LibraryType = "Library";
                         LibraryItems.Add(newLibrary);
                     } else if (libType == "service" || libType == "ser")
                     {
-                        foreach (var type in newLibrary.LibraryAssembly.GetTypes())
+                        foreach (var type in newLibrary.LibraryAssemblyDirect.GetTypes())
                         {
                             NDB_Main._lateServices.Add(type);
                         }
