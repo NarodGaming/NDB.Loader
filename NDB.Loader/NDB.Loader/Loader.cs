@@ -74,21 +74,13 @@ namespace NDB.Loader
             {
                 Console.WriteLine($"Loading: {LibraryItems[i].LibraryName} {Environment.NewLine}");
                 var item = LibraryItems[i];
-/*                if (item.LibraryType == "Dependency" || item.LibraryType == "Service")
-                {
-                    item.LibraryAssemblyDirect = AssemblyLoadContext.Default.LoadFromAssemblyPath(currentDir + item.LibraryName);
-                }
-                else
-                {
-                    
-                }*/
                 item.LibraryAssemblyDirect = item.LibraryAssembly.LoadDefaultAssembly();
                 if (item.LibraryType == "Library")
                 {
                     item.LibraryModules = await NDB_Main._commands.AddModulesAsync(item.LibraryAssemblyDirect, NDB_Main._services);
                 } else if (item.LibraryType == "Service")
                 {
-                    foreach (var type in item.LibraryAssemblyDirect.GetExportedTypes())
+                    foreach (var type in item.LibraryAssemblyDirect.GetTypes())
                     {
                         NDB_Main._lateServices.Add(type);
                     }
@@ -108,10 +100,13 @@ namespace NDB.Loader
                 String builderString = "";
                 foreach (Loader_Structs.LibraryItem library in LibraryItems)
                 {
-                    builderString += $"{library.LibraryName.Split(".dll")[0]} *({library.LibraryType} | v{library.LibraryVersion} | Loaded at {library.timeLoaded})* {Environment.NewLine}";
+                    builderString += $"`{library.LibraryName.Split(".dll")[0]}` ({library.LibraryType} | v{library.LibraryVersion}) {Environment.NewLine} Loaded <t:{((DateTimeOffset)library.timeLoaded.ToUniversalTime()).ToUnixTimeSeconds()}:R>) {Environment.NewLine} {Environment.NewLine}";
                 }
                 if (builderString == "") { return ReplyAsync("You don't have any libraries currently loaded!"); }
-                return ReplyAsync($"**Currently loaded libraries:** {Environment.NewLine}{builderString}");
+                EmbedBuilder liblistEmbed = new EmbedBuilder();
+                liblistEmbed.Title = NDB_Main._config["botname"] + " - Library List";
+                liblistEmbed.Description = builderString;
+                return ReplyAsync("", false, liblistEmbed.Build());
             } else
             {
                 return ReplyAsync($"Sorry, you aren't an owner.");
@@ -137,7 +132,7 @@ namespace NDB.Loader
                                 await NDB_Main._commands.RemoveModuleAsync(libraryModule);
                             }
                         }
-                        if (libraryInList.LibraryType == "d" || libraryInList.LibraryType == "s") // services are temporarily considered the same as dependencies
+                        if (libraryInList.LibraryType == "d" || libraryInList.LibraryType == "Service") // services are temporarily considered the same as dependencies
                         {
                             dependencyList.Add(libraryInList);
                         } else
@@ -160,7 +155,7 @@ namespace NDB.Loader
                     {
                         if (library == libraryInList.LibraryName)
                         {
-                            if (libraryInList.LibraryType == "s" || libraryInList.LibraryType == "d")
+                            if (libraryInList.LibraryType == "Service" || libraryInList.LibraryType == "d")
                             {
                                 await ReplyAsync("Unloading of services and dependencies is currently unsupported.");
                                 return;
@@ -249,7 +244,17 @@ namespace NDB.Loader
                     newLibrary.LibraryAssembly = PluginLoader.CreateFromAssemblyFile(assemblyFile: currentDir + newLibrary.LibraryName, sharedTypes: new[] { typeof(NDB_Main) }, isUnloadable: true, configure: config => config.LoadInMemory = true);
                     newLibrary.LibraryVersion = FileVersionInfo.GetVersionInfo(library).ProductVersion;
                     newLibrary.timeLoaded = DateTime.Now;
-                    newLibrary.LibraryAssemblyDirect = newLibrary.LibraryAssembly.LoadDefaultAssembly();
+                    if (newLibrary.LibraryType == "Service")
+                    {
+                        using (newLibrary.LibraryAssembly.EnterContextualReflection())
+                        {
+                            newLibrary.LibraryAssemblyDirect = AssemblyLoadContext.Default.LoadFromAssemblyPath(currentDir + newLibrary.LibraryName);
+                        }
+                    }
+                    else
+                    {
+                        newLibrary.LibraryAssemblyDirect = newLibrary.LibraryAssembly.LoadDefaultAssembly();
+                    }
                     if (libType == "library" || libType == "lib")
                     {
                         newLibrary.LibraryModules = await NDB_Main._commands.AddModulesAsync(newLibrary.LibraryAssemblyDirect, NDB_Main._services);
