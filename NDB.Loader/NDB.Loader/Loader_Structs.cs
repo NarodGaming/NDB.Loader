@@ -1,4 +1,5 @@
 ﻿using Discord.Commands;
+using McMaster.NETCore.Plugins;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,7 +16,9 @@ namespace NDB.Loader
             public String LibraryName;
             public String LibraryVersion;
             public String LibraryType;
-            public Assembly LibraryAssembly;
+            public DateTime timeLoaded;
+            public PluginLoader LibraryAssembly;
+            public Assembly LibraryAssemblyDirect;
             public IEnumerable<ModuleInfo>? LibraryModules;
         }
     }
