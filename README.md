@@ -1,6 +1,6 @@
 # A library & dependency loader for Discord.NET Bots
 
-This library provides Discord.NET bots, including NDB, with easy loading & unloading capabilities for external libraries & dependencies.
+This library provides Discord.NET bots, including [NDB.Main](https://github.com/NarodGaming/NDB.Main), with easy loading & unloading capabilities for external libraries & dependencies.
 
 For example, with this library, you can late-load (and unload, so also reload) extra modules you may wish to tack on to your bot.
 
@@ -31,8 +31,8 @@ We are unable to provide any assistance for custom or different bots.
 
 A dependency is anything further which your library relies upon outside of it's own library file.
 
-For example, if you use NDB.Library.Embeds in any of your command modules, that is a dependency!
+For example, if you use [NDB.Library.Embeds](https://github.com/NarodGaming/NDB.Library.Embeds) in any of your command modules, that is a dependency!
 
-The command modules themselves however are a library.
+The command modules themselves however are a library, such as [NDB.Library.NScript](https://github.com/NarodGaming/NDB.Library.NScript).
 
 Don't worry - you don't need to add every single dependency in, only those you wish to share between all libraries. We'll automatically load in all other dependencies required as they're needed.
