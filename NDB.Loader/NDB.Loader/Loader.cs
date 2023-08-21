@@ -1,14 +1,9 @@
 ﻿using Discord;
 using Discord.Commands;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics;
-using System.Linq;
-using System.Reflection;
-using System.Reflection.Metadata.Ecma335;
 using McMaster.NETCore.Plugins;
 using System.Runtime.Loader;
-using Microsoft.Extensions.DependencyModel;
 
 namespace NDB.Loader
 {
@@ -47,7 +42,7 @@ namespace NDB.Loader
                         LibraryItems.Add(newLibrary);
                     }
                 }
-                //loadModulesConstructor();
+                // debug lines below, could be used for shared dependencies
                 /*                Type[] sharedTypesWithDep = new Type[LibraryItems.Count+1];
                                 for (int i = 0; i < LibraryItems.Count; i++)
                                 {

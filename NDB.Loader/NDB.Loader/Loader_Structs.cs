@@ -1,25 +1,20 @@
 ﻿using Discord.Commands;
 using McMaster.NETCore.Plugins;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace NDB.Loader
 {
     public class Loader_Structs
     {
-        public struct LibraryItem
+        public struct LibraryItem // every dependency, library or service will be a libraryItem
         {
-            public String LibraryName;
-            public String LibraryVersion;
-            public String LibraryType;
-            public DateTime timeLoaded;
-            public PluginLoader LibraryAssembly;
-            public Assembly LibraryAssemblyDirect;
-            public IEnumerable<ModuleInfo>? LibraryModules;
+            public String LibraryName; // name of library
+            public String LibraryVersion; // version of library
+            public String LibraryType; // type, aka dependency, library or service
+            public DateTime timeLoaded; // time it was last loaded
+            public PluginLoader LibraryAssembly; // assembly (as a pluginloader, each libraryitem uses its own loader)
+            public Assembly LibraryAssemblyDirect; // the direct assembly
+            public IEnumerable<ModuleInfo>? LibraryModules; // the modules of that library, only used for libraries (not dependencies / services)
         }
     }
 }
